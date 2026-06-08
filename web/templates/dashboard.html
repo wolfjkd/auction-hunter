@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>集合竞价猎手 - 竞价看板</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .signal-card {
+            border-left: 4px solid;
+            transition: transform 0.2s;
+        }
+        .signal-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .signal-strong-buy { border-left-color: #dc3545; }
+        .signal-weak-buy { border-left-color: #ffc107; }
+        .signal-neutral { border-left-color: #6c757d; }
+        .signal-weak-sell { border-left-color: #ffc107; }
+        .signal-strong-sell { border-left-color: #dc3545; }
+        
+        .score-badge {
+            font-size: 1.2rem;
+            font-weight: bold;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+        }
+        
+        .live-indicator {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .auction-time {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #dc3545;
+        }
+        
+        .stock-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-graph-up-arrow"></i> 集合竞价猎手
+            </a>
+            <div class="navbar-nav">
+                <a class="nav-link active" href="/"><i class="bi bi-speedometer2"></i> 竞价看板</a>
+                <a class="nav-link" href="/history"><i class="bi bi-clock-history"></i> 历史查询</a>
+            </div>
+            <div class="navbar-text">
+                <span class="live-indicator text-success"><i class="bi bi-circle-fill"></i> 实时</span>
+                <span class="ms-2" id="current-time"></span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- 状态栏 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-calendar"></i> 交易日期</h5>
+                        <h2 id="trade-date">{{ today }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-clock"></i> 竞价倒计时</h5>
+                        <h2 class="auction-time" id="auction-countdown">--:--</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-people"></i> 监控股票</h5>
+                        <h2 id="watchlist-count">{{ watchlist|length }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-dark">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-lightning"></i> 今日信号</h5>
+                        <h2 id="signal-count">{{ signals|length }}</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <button class="btn btn-primary me-2" onclick="collectAuctionData()">
+                            <i class="bi bi-download"></i> 采集竞价数据
+                        </button>
+                        <button class="btn btn-success me-2" onclick="analyzeSignals()">
+                            <i class="bi bi-graph-up"></i> 分析信号
+                        </button>
+                        <button class="btn btn-info me-2" onclick="predictOpen()">
+                            <i class="bi bi-calculator"></i> 预测开盘价
+                        </button>
+                        <button class="btn btn-warning me-2" onclick="exportData()">
+                            <i class="bi bi-file-earmark-spreadsheet"></i> 导出数据
+                        </button>
+                        <button class="btn btn-secondary" onclick="refreshData()">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 信号图表 -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-bar-chart"></i> 信号分布</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="signalChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-pie-chart"></i> 信号统计</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="signalPieChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 信号卡片 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4><i class="bi bi-lightning-charge"></i> 实时信号</h4>
+                <div class="stock-grid" id="signal-cards">
+                    {% if signals %}
+                        {% for signal in signals %}
+                        <div class="card signal-card signal-{{ signal.signal_type|lower|replace(' ', '-') }}">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h5 class="card-title">{{ signal.stock_name }}</h5>
+                                        <p class="card-text text-muted">{{ signal.stock_code }}</p>
+                                    </div>
+                                    <span class="score-badge bg-{{ 'danger' if signal.signal_score >= 80 else 'warning' if signal.signal_score >= 60 else 'secondary' }}">
+                                        {{ signal.signal_score|round(1) }}
+                                    </span>
+                                </div>
+                                <div class="mt-3">
+                                    <span class="badge bg-{{ 'danger' if '强' in signal.signal_text else 'warning' if '弱' in signal.signal_text else 'secondary' }}">
+                                        {{ signal.signal_emoji }} {{ signal.signal_text }}
+                                    </span>
+                                </div>
+                                <div class="mt-2">
+                                    <small class="text-muted">
+                                        预测开盘: <strong>{{ signal.predicted_open_price }}</strong>
+                                        <br>
+                                        置信度: {{ (signal.confidence * 100)|round(1) }}%
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="col-12">
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> 暂无信号数据，请先采集竞价数据
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 自选股列表 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-star"></i> 自选股列表</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>股票代码</th>
+                                        <th>股票名称</th>
+                                        <th>市场</th>
+                                        <th>最新信号</th>
+                                        <th>信号分数</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for stock in watchlist %}
+                                    <tr>
+                                        <td>{{ stock.code }}</td>
+                                        <td>{{ stock.name }}</td>
+                                        <td>
+                                            <span class="badge bg-{{ 'primary' if stock.market == 'sh' else 'success' }}">
+                                                {{ '沪' if stock.market == 'sh' else '深' }}
+                                            </span>
+                                        </td>
+                                        <td id="signal-{{ stock.code }}">-</td>
+                                        <td id="score-{{ stock.code }}">-</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" 
+                                                    onclick="viewStockHistory('{{ stock.code }}')">
+                                                <i class="bi bi-clock-history"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-success"
+                                                    onclick="predictStockOpen('{{ stock.code }}')">
+                                                <i class="bi bi-calculator"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载提示 -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+        <div id="loading-toast" class="toast hide" role="alert">
+            <div class="toast-header">
+                <strong class="me-auto">处理中...</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body" id="loading-message">
+                正在处理，请稍候...
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 更新当前时间
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleTimeString('zh-CN');
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // 更新竞价倒计时
+        function updateAuctionCountdown() {
+            const now = new Date();
+            const auctionStart = new Date(now);
+            auctionStart.setHours(9, 15, 0, 0);
+            
+            const auctionEnd = new Date(now);
+            auctionEnd.setHours(9, 25, 0, 0);
+            
+            const countdownElement = document.getElementById('auction-countdown');
+            
+            if (now < auctionStart) {
+                // 竞价未开始
+                const diff = auctionStart - now;
+                const minutes = Math.floor(diff / 60000);
+                const seconds = Math.floor((diff % 60000) / 1000);
+                countdownElement.textContent = `-${minutes}:${seconds.toString().padStart(2, '0')}`;
+                countdownElement.className = 'auction-time text-warning';
+            } else if (now >= auctionStart && now <= auctionEnd) {
+                // 竞价进行中
+                const diff = auctionEnd - now;
+                const minutes = Math.floor(diff / 60000);
+                const seconds = Math.floor((diff % 60000) / 1000);
+                countdownElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                countdownElement.className = 'auction-time text-success';
+            } else {
+                // 竞价已结束
+                countdownElement.textContent = '已结束';
+                countdownElement.className = 'auction-time text-muted';
+            }
+        }
+        setInterval(updateAuctionCountdown, 1000);
+        updateAuctionCountdown();
+
+        // 初始化图表
+        function initCharts() {
+            // 信号分布柱状图
+            const signalCtx = document.getElementById('signalChart').getContext('2d');
+            new Chart(signalCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['强抢筹', '弱抢筹', '中性', '弱出货', '强出货'],
+                    datasets: [{
+                        label: '信号数量',
+                        data: [0, 0, 0, 0, 0],
+                        backgroundColor: [
+                            '#dc3545',
+                            '#ffc107',
+                            '#6c757d',
+                            '#ffc107',
+                            '#dc3545'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 信号分布饼图
+            const pieCtx = document.getElementById('signalPieChart').getContext('2d');
+            new Chart(pieCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['强抢筹', '弱抢筹', '中性', '弱出货', '强出货'],
+                    datasets: [{
+                        data: [0, 0, 0, 0, 0],
+                        backgroundColor: [
+                            '#dc3545',
+                            '#ffc107',
+                            '#6c757d',
+                            '#ffc107',
+                            '#dc3545'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        // 显示加载提示
+        function showLoading(message) {
+            document.getElementById('loading-message').textContent = message;
+            const toast = new bootstrap.Toast(document.getElementById('loading-toast'));
+            toast.show();
+        }
+
+        // 采集竞价数据
+        async function collectAuctionData() {
+            showLoading('正在采集竞价数据...');
+            try {
+                const response = await fetch('/api/collect-auction', { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`采集完成！\n总数据: ${result.total}\n保存成功: ${result.saved}`);
+                    refreshData();
+                } else {
+                    alert(`采集失败: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`采集异常: ${error.message}`);
+            }
+        }
+
+        // 分析信号
+        async function analyzeSignals() {
+            showLoading('正在分析竞价信号...');
+            try {
+                const response = await fetch('/api/analyze-signals', { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`分析完成！生成${result.signals.length}个信号`);
+                    refreshData();
+                } else {
+                    alert(`分析失败: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`分析异常: ${error.message}`);
+            }
+        }
+
+        // 预测开盘价
+        async function predictOpen() {
+            showLoading('正在预测开盘价...');
+            try {
+                const response = await fetch('/api/predict-open', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stock_code: '600170' })
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`预测结果:\n当前价格: ${result.current_price}\n预测价格: ${result.predicted_price}\n置信度: ${(result.confidence * 100).toFixed(1)}%`);
+                } else {
+                    alert(`预测失败: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`预测异常: ${error.message}`);
+            }
+        }
+
+        // 导出数据
+        async function exportData() {
+            showLoading('正在导出数据...');
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const response = await fetch('/api/export-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date: today, type: 'all' })
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('导出完成！文件已保存到data/exports目录');
+                } else {
+                    alert(`导出失败: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`导出异常: ${error.message}`);
+            }
+        }
+
+        // 刷新数据
+        function refreshData() {
+            window.location.reload();
+        }
+
+        // 查看股票历史
+        function viewStockHistory(stockCode) {
+            window.location.href = `/history?stock_code=${stockCode}&days=30`;
+        }
+
+        // 预测单只股票开盘价
+        async function predictStockOpen(stockCode) {
+            showLoading(`正在预测${stockCode}开盘价...`);
+            try {
+                const response = await fetch('/api/predict-open', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stock_code: stockCode })
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`${stockCode}预测结果:\n当前价格: ${result.current_price}\n预测价格: ${result.predicted_price}\n置信度: ${(result.confidence * 100).toFixed(1)}%`);
+                } else {
+                    alert(`预测失败: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`预测异常: ${error.message}`);
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initCharts();
+        });
+    </script>
+</body>
+</html>

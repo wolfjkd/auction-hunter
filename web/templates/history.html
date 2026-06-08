@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>集合竞价猎手 - 历史查询</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .history-table {
+            font-size: 0.9rem;
+        }
+        .signal-badge {
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+        }
+        .score-high { color: #dc3545; font-weight: bold; }
+        .score-medium { color: #ffc107; font-weight: bold; }
+        .score-low { color: #6c757d; font-weight: bold; }
+        .chart-container {
+            position: relative;
+            height: 400px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-graph-up-arrow"></i> 集合竞价猎手
+            </a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/"><i class="bi bi-speedometer2"></i> 竞价看板</a>
+                <a class="nav-link active" href="/history"><i class="bi bi-clock-history"></i> 历史查询</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- 查询表单 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-search"></i> 历史竞价查询</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" action="/history">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <label for="stock_code" class="form-label">股票代码</label>
+                                    <select class="form-select" id="stock_code" name="stock_code">
+                                        <option value="">请选择股票</option>
+                                        {% for stock in watchlist %}
+                                        <option value="{{ stock.code }}" {% if stock_code == stock.code %}selected{% endif %}>
+                                            {{ stock.code }} - {{ stock.name }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="days" class="form-label">查询天数</label>
+                                    <select class="form-select" id="days" name="days">
+                                        <option value="7" {% if days == 7 %}selected{% endif %}>7天</option>
+                                        <option value="30" {% if days == 30 %}selected{% endif %}>30天</option>
+                                        <option value="90" {% if days == 90 %}selected{% endif %}>90天</option>
+                                        <option value="180" {% if days == 180 %}selected{% endif %}>180天</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-search"></i> 查询
+                                    </button>
+                                </div>
+                                <div class="col-md-3 d-flex align-items-end">
+                                    <button type="button" class="btn btn-success w-100" onclick="exportHistory()">
+                                        <i class="bi bi-download"></i> 导出历史数据
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if stock_code %}
+        <!-- 股票信息 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-building"></i> 股票代码</h5>
+                        <h2>{{ stock_code }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-clock-history"></i> 查询天数</h5>
+                        <h2>{{ days }}天</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-database"></i> 数据条数</h5>
+                        <h2 id="data-count">{{ history_data|length }}</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-dark">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-graph-up"></i> 平均分数</h5>
+                        <h2 id="avg-score">-</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史图表 -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-graph-up"></i> 历史竞价价格</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="priceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-bar-chart"></i> 信号分布</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="signalChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史数据表格 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5><i class="bi bi-table"></i> 历史竞价数据</h5>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" onclick="toggleAllDetails()">
+                                <i class="bi bi-arrows-expand"></i> 展开/收起详情
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover history-table">
+                                <thead>
+                                    <tr>
+                                        <th>交易日期</th>
+                                        <th>竞价开始价</th>
+                                        <th>竞价结束价</th>
+                                        <th>竞价最高价</th>
+                                        <th>竞价最低价</th>
+                                        <th>竞价成交量</th>
+                                        <th>开盘价</th>
+                                        <th>信号类型</th>
+                                        <th>信号分数</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if history_data %}
+                                        {% for record in history_data %}
+                                        <tr>
+                                            <td>{{ record.trade_date }}</td>
+                                            <td>{{ "%.2f"|format(record.auction_start_price) if record.auction_start_price else '-' }}</td>
+                                            <td>{{ "%.2f"|format(record.auction_end_price) if record.auction_end_price else '-' }}</td>
+                                            <td>{{ "%.2f"|format(record.auction_high_price) if record.auction_high_price else '-' }}</td>
+                                            <td>{{ "%.2f"|format(record.auction_low_price) if record.auction_low_price else '-' }}</td>
+                                            <td>{{ record.auction_volume|default(0) }}</td>
+                                            <td>{{ "%.2f"|format(record.open_price) if record.open_price else '-' }}</td>
+                                            <td>
+                                                <span class="badge signal-badge bg-{{ 'danger' if '强' in record.signal_type else 'warning' if '弱' in record.signal_type else 'secondary' }}">
+                                                    {{ record.signal_type|default('-') }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="{{ 'score-high' if record.signal_score >= 80 else 'score-medium' if record.signal_score >= 60 else 'score-low' }}">
+                                                    {{ "%.1f"|format(record.signal_score) if record.signal_score else '-' }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-info" 
+                                                        onclick="showDetail('{{ record.trade_date }}')">
+                                                    <i class="bi bi-info-circle"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="10" class="text-center text-muted">
+                                                <i class="bi bi-inbox"></i> 暂无历史数据
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <!-- 未选择股票提示 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 请先选择股票代码进行查询
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 详情模态框 -->
+    <div class="modal fade" id="detailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">竞价详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detail-content">
+                    <!-- 动态内容 -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 初始化图表
+        function initCharts() {
+            {% if history_data %}
+            // 准备数据
+            const dates = [];
+            const startPrices = [];
+            const endPrices = [];
+            const highPrices = [];
+            const lowPrices = [];
+            const scores = [];
+            
+            {% for record in history_data %}
+            dates.push('{{ record.trade_date }}');
+            startPrices.push({{ record.auction_start_price or 0 }});
+            endPrices.push({{ record.auction_end_price or 0 }});
+            highPrices.push({{ record.auction_high_price or 0 }});
+            lowPrices.push({{ record.auction_low_price or 0 }});
+            scores.push({{ record.signal_score or 0 }});
+            {% endfor %}
+            
+            // 价格图表
+            const priceCtx = document.getElementById('priceChart').getContext('2d');
+            new Chart(priceCtx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: '竞价开始价',
+                            data: startPrices,
+                            borderColor: '#007bff',
+                            backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                            fill: false
+                        },
+                        {
+                            label: '竞价结束价',
+                            data: endPrices,
+                            borderColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                            fill: false
+                        },
+                        {
+                            label: '竞价最高价',
+                            data: highPrices,
+                            borderColor: '#dc3545',
+                            backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                            fill: false
+                        },
+                        {
+                            label: '竞价最低价',
+                            data: lowPrices,
+                            borderColor: '#ffc107',
+                            backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+            
+            // 信号分布图表
+            const signalCounts = {
+                '强抢筹': 0,
+                '弱抢筹': 0,
+                '中性': 0,
+                '弱出货': 0,
+                '强出货': 0
+            };
+            
+            {% for record in history_data %}
+            const signalType = '{{ record.signal_type }}';
+            if (signalType.includes('强抢筹')) signalCounts['强抢筹']++;
+            else if (signalType.includes('弱抢筹')) signalCounts['弱抢筹']++;
+            else if (signalType.includes('中性')) signalCounts['中性']++;
+            else if (signalType.includes('弱出货')) signalCounts['弱出货']++;
+            else if (signalType.includes('强出货')) signalCounts['强出货']++;
+            {% endfor %}
+            
+            const signalCtx = document.getElementById('signalChart').getContext('2d');
+            new Chart(signalCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(signalCounts),
+                    datasets: [{
+                        data: Object.values(signalCounts),
+                        backgroundColor: [
+                            '#dc3545',
+                            '#ffc107',
+                            '#6c757d',
+                            '#ffc107',
+                            '#dc3545'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+            
+            // 计算平均分数
+            const validScores = scores.filter(s => s > 0);
+            const avgScore = validScores.length > 0 ? 
+                (validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1) : '-';
+            document.getElementById('avg-score').textContent = avgScore;
+            
+            {% endif %}
+        }
+        
+        // 显示详情
+        function showDetail(tradeDate) {
+            // 这里可以加载详细数据
+            document.getElementById('detail-content').innerHTML = `
+                <div class="text-center">
+                    <i class="bi bi-hourglass-split" style="font-size: 3rem;"></i>
+                    <p class="mt-3">正在加载 ${tradeDate} 的详细数据...</p>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+            modal.show();
+            
+            // 模拟加载
+            setTimeout(() => {
+                document.getElementById('detail-content').innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>竞价阶段</h6>
+                            <ul class="list-group list-group-flush">
+                                <li class="list-group-item">9:15-9:20: 试探阶段</li>
+                                <li class="list-group-item">9:20-9:25: 真实意图阶段</li>
+                                <li class="list-group-item">9:25: 撮合成交</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>分析结论</h6>
+                            <p>基于竞价阶段的量价变化，该股票表现出一定的交易机会。</p>
+                        </div>
+                    </div>
+                `;
+            }, 1000);
+        }
+        
+        // 导出历史数据
+        function exportHistory() {
+            const stockCode = document.getElementById('stock_code').value;
+            const days = document.getElementById('days').value;
+            
+            if (!stockCode) {
+                alert('请先选择股票代码');
+                return;
+            }
+            
+            // 调用导出API
+            fetch('/api/export-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    date: new Date().toISOString().split('T')[0], 
+                    type: 'all' 
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    alert('导出完成！文件已保存到data/exports目录');
+                } else {
+                    alert('导出失败: ' + result.error);
+                }
+            })
+            .catch(error => {
+                alert('导出异常: ' + error.message);
+            });
+        }
+        
+        // 切换所有详情
+        function toggleAllDetails() {
+            // 简单实现：刷新页面
+            window.location.reload();
+        }
+        
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initCharts();
+        });
+    </script>
+</body>
+</html>

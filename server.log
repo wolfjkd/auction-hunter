@@ -1,0 +1,16 @@
+INFO:storage.database:数据库初始化完成: C:\Users\wolfj\WorkBuddy\Claw\auction-hunter\data\auction.db
+INFO:__main__:启动Web服务器: 0.0.0.0:5001
+ * Serving Flask app 'app'
+ * Debug mode: off
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.0.146:5001
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:werkzeug:127.0.0.1 - - [08/Jun/2026 21:50:20] "GET /api/auction-signals HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [08/Jun/2026 21:50:32] "HEAD / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [08/Jun/2026 21:57:40] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [08/Jun/2026 21:58:44] "GET /api/auction-signals HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [08/Jun/2026 21:58:44] "GET /api/database-stats HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [08/Jun/2026 22:18:05] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [08/Jun/2026 22:18:06] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
