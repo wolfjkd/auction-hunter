@@ -318,11 +318,15 @@
         setInterval(updateAuctionCountdown, 1000);
         updateAuctionCountdown();
 
+        // 图表实例
+        let signalBarChart = null;
+        let signalPieChart = null;
+
         // 初始化图表
         function initCharts() {
             // 信号分布柱状图
             const signalCtx = document.getElementById('signalChart').getContext('2d');
-            new Chart(signalCtx, {
+            signalBarChart = new Chart(signalCtx, {
                 type: 'bar',
                 data: {
                     labels: ['强抢筹', '弱抢筹', '中性', '弱出货', '强出货'],
@@ -354,7 +358,7 @@
 
             // 信号分布饼图
             const pieCtx = document.getElementById('signalPieChart').getContext('2d');
-            new Chart(pieCtx, {
+            signalPieChart = new Chart(pieCtx, {
                 type: 'doughnut',
                 data: {
                     labels: ['强抢筹', '弱抢筹', '中性', '弱出货', '强出货'],
@@ -374,6 +378,87 @@
                     maintainAspectRatio: false
                 }
             });
+        }
+
+        // 加载信号数据
+        async function loadSignals() {
+            try {
+                const response = await fetch('/api/auction-signals');
+                const result = await response.json();
+                
+                if (result.success && result.data.length > 0) {
+                    const signals = result.data;
+                    
+                    // 更新信号数量
+                    document.getElementById('signal-count').textContent = signals.length;
+                    
+                    // 统计信号分布
+                    const distribution = { '强抢筹': 0, '弱抢筹': 0, '中性': 0, '弱出货': 0, '强出货': 0 };
+                    signals.forEach(s => {
+                        if (distribution.hasOwnProperty(s.signal_type)) {
+                            distribution[s.signal_type]++;
+                        }
+                    });
+                    
+                    // 更新图表
+                    const data = [
+                        distribution['强抢筹'],
+                        distribution['弱抢筹'],
+                        distribution['中性'],
+                        distribution['弱出货'],
+                        distribution['强出货']
+                    ];
+                    
+                    if (signalBarChart) {
+                        signalBarChart.data.datasets[0].data = data;
+                        signalBarChart.update();
+                    }
+                    if (signalPieChart) {
+                        signalPieChart.data.datasets[0].data = data;
+                        signalPieChart.update();
+                    }
+                    
+                    // 更新信号卡片
+                    const container = document.getElementById('signal-cards');
+                    container.innerHTML = signals.map(s => `
+                        <div class="card signal-card signal-${s.signal_type.includes('强抢筹') ? 'strong-buy' : s.signal_type.includes('弱抢筹') ? 'weak-buy' : s.signal_type.includes('中性') ? 'neutral' : s.signal_type.includes('弱出货') ? 'weak-sell' : 'strong-sell'}">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h5 class="card-title">${s.stock_name}</h5>
+                                        <p class="card-text text-muted">${s.stock_code}</p>
+                                    </div>
+                                    <span class="score-badge bg-${s.signal_score >= 80 ? 'danger' : s.signal_score >= 60 ? 'warning' : 'secondary'}">
+                                        ${s.signal_score.toFixed(1)}
+                                    </span>
+                                </div>
+                                <div class="mt-3">
+                                    <span class="badge bg-${s.signal_type.includes('强') ? 'danger' : s.signal_type.includes('弱') ? 'warning' : 'secondary'}">
+                                        ${s.signal_emoji} ${s.signal_text}
+                                    </span>
+                                </div>
+                                <div class="mt-2">
+                                    <small class="text-muted">
+                                        预测开盘: <strong>${s.predicted_open_price.toFixed(2)}</strong>
+                                        <br>
+                                        置信度: ${(s.confidence * 100).toFixed(1)}%
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    // 更新自选股表格
+                    signals.forEach(s => {
+                        const signalCell = document.getElementById(`signal-${s.stock_code}`);
+                        const scoreCell = document.getElementById(`score-${s.stock_code}`);
+                        if (signalCell) signalCell.textContent = `${s.signal_emoji} ${s.signal_text}`;
+                        if (scoreCell) scoreCell.textContent = s.signal_score.toFixed(1);
+                    });
+                }
+            } catch (error) {
+                console.error('加载信号失败:', error);
+            }
         }
 
         // 显示加载提示
@@ -496,6 +581,7 @@
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
             initCharts();
+            loadSignals();
         });
     </script>
 </body>
